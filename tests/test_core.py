@@ -366,6 +366,16 @@ def test_packaging_uses_custom_app_icon():
     assert 'icon=str(project_root / "assets" / "remote-tool.ico")' in spec
 
 
+def test_windows_installer_script_sets_config_path_and_excludes_local_config():
+    script = Path("installer/windows/RemoteTool.iss").read_text(encoding="utf-8")
+
+    assert 'Source: "..\\..\\dist\\RemoteTool\\*"' in script
+    assert "REMOTE_TOOL_CONFIG_PATH" in script
+    assert "{userappdata}\\RemoteTool\\config.json" in script
+    assert "config.key" not in script
+    assert 'Source: "..\\..\\config.json"' not in script
+
+
 def test_skill_uses_config_path_env_and_not_fixed_port():
     skill = Path("skills/remote-linux-http/SKILL.md").read_text(encoding="utf-8")
 

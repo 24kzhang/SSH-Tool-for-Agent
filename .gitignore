@@ -17,6 +17,7 @@ htmlcov/
 # 构建和打包产物
 build/
 dist/
+release/
 *.egg-info/
 
 # 本地配置和运行时数据
@@ -30,3 +31,5 @@ logs/
 .ipynb_checkpoints/
 .DS_Store
 Thumbs.db
+/anzhuangtest/
+/installer/
