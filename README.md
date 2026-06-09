@@ -30,10 +30,7 @@ RemoteTool 是一个本地远程 Linux 控制中间程序。它在本机启动�
 ```
 
 
-
-如果 Windows 提示 SmartScreen 或未知发布者，这是因为开源构建默认没有代码签名。确认安装包来源可信后再运行。
-
-### 方式二：从源码运行（Windows、Linux、macOS）
+### 方式二：从源码运行
 
 需要先安装：
 
@@ -68,7 +65,7 @@ uv run python app.py
 
 
 
-## GUI 使用
+## 使用
 
 1. 启动 RemoteTool。
 2. 在主界面修改本地 HTTP 端口和默认命令超时时间，按需保存。
@@ -77,9 +74,15 @@ uv run python app.py
 5. 点击连接，状态变为已连接后即可执行远程命令。
 6. 主界面会显示来自 Agent 或本地 API 的命令和执行结果。
 
+![GUI.png](pic/GUI.png)
+
+
+
 ## Agent 调用方式
 
-推荐通过本地 HTTP API 调用。配置文件中保存了当前 API host、port 和 token，所以即使用户在 GUI 中修改了端口，Agent 也可以通过读取配置文件找到正确端口。
+推荐通过本地 HTTP API 调用。配置文件中保存了当前 API host、port 和 token，所以即使用户在 GUI 中修改了端口，Agent 也可以通过读取配置文件找到正确端口。但可能要显示指定 skill。
+
+![提问.png](pic/%E6%8F%90%E9%97%AE.png)
 
 ### Skill
 
