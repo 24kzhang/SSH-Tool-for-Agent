@@ -83,7 +83,7 @@ uv run python app.py
 
 ### Skill
 
-安装完成后，安装目录中包含 skills文件夹，将 skills 中的 remote-linux-http 放到 Codex 的 skills 文件夹下：
+安装完成后，安装目录中包含 skills文件夹，将 skills 中的 remote-linux-http 放到 Codex 的 skills 文件夹下，其他 Agent 同理：
 
 ```text
 skills/remote-linux-http
