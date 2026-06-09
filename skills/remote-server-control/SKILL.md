@@ -1,16 +1,18 @@
 ---
-name: remote-linux-http
-description: Use when the user wants Codex to run Linux commands through a local Remote Tool HTTP gateway while keeping server IP, account, and password out of chat. Always route commands by an explicit saved server name and read the current HTTP host, port, and token from the Remote Tool config path.
+name: remote-server-control
+description: Use whenever the user mentions a named remote server, asks to view/check/run anything on a named server, or asks Codex to operate Linux through RemoteTool. A named server is a saved RemoteTool server name, not an SSH host to discover. Always use the local RemoteTool HTTP API, never read .ssh files or connect by SSH directly, and keep server IP, account, and password out of chat.
 ---
 
-# Remote Linux HTTP
+# Remote Server Control
 
 Use this skill to access remote Linux servers through a locally running Remote Tool GUI/API.
 
 ## Rules
 
 - Never ask for, print, infer, or expose server IP, username, or password.
+- Never read `.ssh`, SSH config files, shell history, or credential files to discover a server.
 - Never SSH directly. Use only the local Remote Tool HTTP API or its client wrapper.
+- If the user says `<name>服务器`, `<name> server`, or similar, treat `<name>` as the saved RemoteTool server name.
 - Always target a saved server by explicit server name.
 - If more than one server is saved and the user did not name one, ask which server name to use.
 - HTTP command execution is automatic. Run only the command the user requested.

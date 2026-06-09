@@ -377,8 +377,17 @@ def test_windows_installer_script_sets_config_path_and_excludes_local_config():
 
 
 def test_skill_uses_config_path_env_and_not_fixed_port():
-    skill = Path("skills/remote-linux-http/SKILL.md").read_text(encoding="utf-8")
+    skill = Path("skills/remote-server-control/SKILL.md").read_text(encoding="utf-8")
 
     assert "REMOTE_TOOL_CONFIG_PATH" in skill
     assert "api_port" in skill
     assert "8765" not in skill
+
+
+def test_skill_triggers_on_named_server_and_blocks_ssh_discovery():
+    skill = Path("skills/remote-server-control/SKILL.md").read_text(encoding="utf-8")
+
+    assert "named remote server" in skill
+    assert "<name>\u670d\u52a1\u5668" in skill
+    assert ".ssh" in skill
+    assert "Never SSH directly" in skill

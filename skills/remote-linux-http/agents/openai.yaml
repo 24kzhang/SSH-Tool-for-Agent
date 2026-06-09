@@ -1,7 +1,0 @@
-interface:
-  display_name: "Remote Linux HTTP"
-  short_description: "通过本地 Remote Tool HTTP 网关访问命名 Linux 服务器"
-  default_prompt: "Use $remote-linux-http to run a command on a named server through the local Remote Tool HTTP gateway."
-
-policy:
-  allow_implicit_invocation: true

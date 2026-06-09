@@ -18,7 +18,7 @@ RemoteTool 是一个本地远程 Linux 控制中间程序。它在本机启动�
 
 ### 方式一：下载安装包
 
-1. 打开 GitHub 仓库的 Releases 页面，下载安装包。
+1. 打开 GitHub 仓库的 Releases 页面，下载安装包和 skill。
 2. 在 GUI 中添加服务器，输入服务器名称、IP、端口、账号和密码。
 3. 点击连接，连接成功后即可通过 GUI 或本地 HTTP API 执行命令。
 
@@ -83,10 +83,10 @@ uv run python app.py
 
 ### Skill
 
-安装完成后，安装目录中包含 skills文件夹，将 skills 中的 remote-linux-http 放到 Codex 的 skills 文件夹下，其他 Agent 同理：
+安装完成后，安装目录中包含 skills 文件夹，将 skills 中的 remote-server-control 放到 Codex 的 skills 文件夹下，其他 Agent 同理：
 
 ```text
-skills/remote-linux-http
+skills/remote-server-control
 ```
 
 这个 Skill 不硬编码安装目录或 HTTP 端口。Codex 使用时应先读取：
@@ -202,7 +202,7 @@ remote.py                      SSH 持久 shell 执行
 server.py                      FastAPI 本地接口
 assets/                        图标资源
 installer/windows/             Windows 安装包脚本
-skills/remote-linux-http/      Codex Skill
+skills/remote-server-control/  Codex Skill
 tests/                         自动化测试
 ```
 

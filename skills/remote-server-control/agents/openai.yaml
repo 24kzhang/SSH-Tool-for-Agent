@@ -1,0 +1,7 @@
+interface:
+  display_name: "Remote Server Control"
+  short_description: "Control named remote servers like xxx服务器, xxx server or prod server."
+  default_prompt: "Use $remote-server-control whenever a user mentions a named server, and route commands through the local RemoteTool API."
+
+policy:
+  allow_implicit_invocation: true
