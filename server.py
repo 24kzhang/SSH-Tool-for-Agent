@@ -20,12 +20,14 @@ class CommandRecord:
     status: str
     timeout: int
     created_at: float
+    updated_at: float
     source: str = "codex"
     stdout: str = ""
     stderr: str = ""
     exit_code: int | None = None
     duration_ms: int | None = None
     error: str = ""
+    message: str = ""
     danger_hint: str = ""
 
 
@@ -55,6 +57,7 @@ class CommandManager:
             status="queued",
             timeout=timeout or self.config.command_timeout,
             created_at=time.time(),
+            updated_at=time.time(),
             source=source,
             danger_hint=danger_hint(cmd),
         )
@@ -87,7 +90,17 @@ class CommandManager:
             return self._commands.get(command_id)
 
     def mark_running(self, command_id: str) -> None:
-        self._set(command_id, status="running")
+        self._set(command_id, status="running", message="命令已开始执行")
+
+    def heartbeat(self, command_id: str, duration_ms: int, stdout: str = "") -> None:
+        changes = {
+            "status": "running",
+            "duration_ms": duration_ms,
+            "message": f"命令仍在执行，已运行 {duration_ms // 1000} 秒",
+        }
+        if stdout:
+            changes["stdout"] = stdout
+        self._set(command_id, **changes)
 
     def complete(
         self,
@@ -104,10 +117,11 @@ class CommandManager:
             stderr=stderr,
             exit_code=exit_code,
             duration_ms=duration_ms,
+            message="命令执行完成",
         )
 
     def fail(self, command_id: str, status: str, error: str, duration_ms: int | None = None) -> None:
-        self._set(command_id, status=status, error=error, stderr=error, duration_ms=duration_ms)
+        self._set(command_id, status=status, error=error, stderr=error, duration_ms=duration_ms, message=error)
 
     def reject(self, command_id: str) -> None:
         self.fail(command_id, "rejected", "用户在 GUI 中拒绝执行")
@@ -119,6 +133,7 @@ class CommandManager:
                 return
             for key, value in changes.items():
                 setattr(record, key, value)
+            record.updated_at = time.time()
 
 
 def danger_hint(cmd: str) -> str:
@@ -139,6 +154,7 @@ def danger_hint(cmd: str) -> str:
 def command_to_dict(record: CommandRecord) -> dict:
     data = asdict(record)
     data["created_text"] = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(record.created_at))
+    data["updated_text"] = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(record.updated_at))
     return data
 
 

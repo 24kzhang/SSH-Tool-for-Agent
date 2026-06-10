@@ -6,7 +6,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import uvicorn
-from PySide6.QtCore import QObject, Qt, Signal, Slot
+from PySide6.QtCore import QObject, Qt, Signal, Slot, QTimer
 from PySide6.QtGui import QIcon, QPalette
 from PySide6.QtWidgets import (
     QApplication,
@@ -269,6 +269,8 @@ class MainWindow(QMainWindow):
         self.bridge = Bridge()
         self.executor = ThreadPoolExecutor(max_workers=8)
         self.sessions: dict[str, RemoteShell] = {}
+        self.session_lock = threading.RLock()
+        self.health_check_running = False
         self.command_rows: dict[str, int] = {}
         self.api_server: uvicorn.Server | None = None
         self.api_thread: threading.Thread | None = None
@@ -283,6 +285,10 @@ class MainWindow(QMainWindow):
         self._wire()
         self._wire_theme_listener()
         self._refresh_servers()
+        self.health_timer = QTimer(self)
+        self.health_timer.setInterval(30000)
+        self.health_timer.timeout.connect(self._schedule_health_check)
+        self.health_timer.start()
 
         self.manager.on_command = lambda record: self.bridge.command_added.emit(record.id)
         self._start_api_server()
@@ -531,10 +537,11 @@ class MainWindow(QMainWindow):
         shell = RemoteShell()
         try:
             shell.connect(server.host, server.port, server.username, server.password)
-            old = self.sessions.get(server.name)
-            if old:
-                old.close()
-            self.sessions[server.name] = shell
+            with self.session_lock:
+                old = self.sessions.get(server.name)
+                if old:
+                    old.close()
+                self.sessions[server.name] = shell
             self.manager.set_server_status(server.name, "connected")
             self.bridge.message.emit(f"服务器 {server.name} 已连接")
         except Exception as exc:
@@ -550,7 +557,8 @@ class MainWindow(QMainWindow):
             self.disconnect_server(name)
 
     def disconnect_server(self, name: str) -> None:
-        shell = self.sessions.pop(name, None)
+        with self.session_lock:
+            shell = self.sessions.pop(name, None)
         if shell:
             shell.close()
         self.manager.set_server_status(name, "disconnected")
@@ -625,32 +633,91 @@ class MainWindow(QMainWindow):
         record = self.manager.get(command_id)
         if not record or record.status != "queued":
             return
-        shell = self.sessions.get(record.server)
-        if not shell or not shell.connected:
-            self.manager.fail(command_id, "failed", f"服务器 {record.server} 未连接")
-            self.bridge.command_changed.emit(command_id)
-            return
         self.manager.mark_running(command_id)
         self.bridge.command_changed.emit(command_id)
         self.executor.submit(self._execute_worker, command_id)
+
+    def _ensure_command_shell(self, server_name: str) -> RemoteShell:
+        with self.session_lock:
+            shell = self.sessions.get(server_name)
+        if shell and shell.probe():
+            self.manager.set_server_status(server_name, "connected")
+            return shell
+
+        if shell:
+            shell.close()
+            with self.session_lock:
+                if self.sessions.get(server_name) is shell:
+                    self.sessions.pop(server_name, None)
+
+        server = find_server(self.config, server_name)
+        if not server:
+            raise RuntimeError(f"服务器 {server_name} 不存在")
+
+        self.manager.set_server_status(server_name, "reconnecting")
+        self.bridge.server_changed.emit(server_name)
+        self.bridge.message.emit(f"服务器 {server_name} 连接已失效，正在自动重连...")
+
+        new_shell = RemoteShell()
+        try:
+            new_shell.connect(server.host, server.port, server.username, server.password)
+        except Exception:
+            new_shell.close()
+            self.manager.set_server_status(server_name, "failed")
+            self.bridge.server_changed.emit(server_name)
+            raise
+
+        with self.session_lock:
+            self.sessions[server_name] = new_shell
+        self.manager.set_server_status(server_name, "connected")
+        self.bridge.server_changed.emit(server_name)
+        self.bridge.message.emit(f"服务器 {server_name} 已自动重连")
+        return new_shell
 
     def _execute_worker(self, command_id: str) -> None:
         record = self.manager.get(command_id)
         if not record:
             return
-        shell = self.sessions.get(record.server)
-        if not shell:
-            self.manager.fail(command_id, "failed", f"服务器 {record.server} 未连接")
-            self.bridge.command_changed.emit(command_id)
-            return
         try:
-            stdout, stderr, exit_code, duration_ms = shell.execute(record.cmd, record.timeout)
+            shell = self._ensure_command_shell(record.server)
+
+            def heartbeat(duration_ms: int, stdout: str) -> None:
+                self.manager.heartbeat(command_id, duration_ms, stdout)
+                self.bridge.command_changed.emit(command_id)
+
+            stdout, stderr, exit_code, duration_ms = shell.execute(record.cmd, record.timeout, heartbeat)
             self.manager.complete(command_id, stdout, stderr, exit_code, duration_ms)
         except TimeoutError as exc:
             self.manager.fail(command_id, "timeout", str(exc))
         except Exception as exc:
             self.manager.fail(command_id, "failed", str(exc))
         self.bridge.command_changed.emit(command_id)
+
+    @Slot()
+    def _schedule_health_check(self) -> None:
+        if self.health_check_running:
+            return
+        self.health_check_running = True
+        self.executor.submit(self._health_check_worker)
+
+    def _health_check_worker(self) -> None:
+        try:
+            with self.session_lock:
+                sessions = list(self.sessions.items())
+            for name, shell in sessions:
+                if shell.probe(timeout=3):
+                    self.manager.set_server_status(name, "connected")
+                    self.bridge.server_changed.emit(name)
+                    continue
+                shell.close()
+                with self.session_lock:
+                    if self.sessions.get(name) is shell:
+                        self.sessions.pop(name, None)
+                self.manager.set_server_status(name, "disconnected")
+                self.bridge.server_changed.emit(name)
+                self.bridge.message.emit(f"服务器 {name} 连接已失效")
+        finally:
+            self.health_check_running = False
 
     @Slot()
     def show_selected_output(self) -> None:
@@ -687,9 +754,12 @@ class MainWindow(QMainWindow):
         self.status.setText(f"{message} | API http://{self.config.api_host}:{self.config.api_port}")
 
     def closeEvent(self, event) -> None:
-        for shell in list(self.sessions.values()):
+        self.health_timer.stop()
+        with self.session_lock:
+            sessions = list(self.sessions.values())
+            self.sessions.clear()
+        for shell in sessions:
             shell.close()
-        self.sessions.clear()
         self._stop_api_server()
         self.executor.shutdown(wait=False, cancel_futures=True)
         super().closeEvent(event)

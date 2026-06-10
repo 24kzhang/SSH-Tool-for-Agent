@@ -69,7 +69,7 @@ $body = @{
 $cmd = Invoke-RestMethod -Method Post -Uri "$base/api/commands" -Headers $headers -Body $body -ContentType "application/json"
 ```
 
-Poll until `status` is `completed`, `failed`, or `timeout`:
+Poll until `status` is `completed`, `failed`, or `timeout`. If `status` is `queued` or `running`, the command is still active; continue polling and treat `message`, `updated_text`, and `duration_ms` as progress fields, not as failure.
 
 ```powershell
 Invoke-RestMethod -Method Get -Uri "$base/api/commands/$($cmd.id)" -Headers $headers

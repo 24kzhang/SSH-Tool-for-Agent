@@ -270,6 +270,30 @@ def test_command_lifecycle_does_not_create_log_file(tmp_path: Path, monkeypatch)
     assert not (tmp_path / "logs").exists()
 
 
+def test_command_heartbeat_updates_running_status():
+    config = AppConfig(
+        api_token="secret-token",
+        servers=[ServerConfig(name="dev", host="host", username="u", password="p")],
+    )
+    manager = CommandManager(config)
+    client = TestClient(create_app(manager))
+    command = manager.submit("dev", "sleep 30")
+
+    manager.mark_running(command.id)
+    manager.heartbeat(command.id, 15000, "partial\n")
+
+    result = client.get(
+        f"/api/commands/{command.id}",
+        headers={"X-Remote-Token": "secret-token"},
+    ).json()
+
+    assert result["status"] == "running"
+    assert result["duration_ms"] == 15000
+    assert result["stdout"] == "partial\n"
+    assert "15" in result["message"]
+    assert result["updated_at"] >= result["created_at"]
+
+
 def test_client_accepts_unquoted_multi_word_command_with_server():
     args = parse_args(["--server", "dev", "conda", "env", "list"])
 
@@ -335,6 +359,89 @@ def test_main_window_does_not_show_bottom_plain_password_warning(monkeypatch):
     window.close()
 
     assert "密码按当前配置明文保存" not in "\n".join(labels)
+
+
+def test_gui_auto_reconnects_stale_session_before_command(monkeypatch):
+    qt_app = QApplication.instance() or QApplication([])
+
+    def fake_start(self):
+        return None
+
+    class StaleShell:
+        closed = False
+
+        def probe(self, timeout=5):
+            return False
+
+        def close(self):
+            self.closed = True
+
+    class FreshShell:
+        connected_to = None
+
+        def connect(self, host, port, username, password):
+            self.connected_to = (host, port, username, password)
+
+        def probe(self, timeout=5):
+            return True
+
+        def close(self):
+            return None
+
+    monkeypatch.setattr(app_module.MainWindow, "_start_api_server", fake_start)
+    monkeypatch.setattr(app_module, "RemoteShell", FreshShell)
+
+    config = AppConfig(
+        api_token="secret-token",
+        servers=[ServerConfig(name="dev", host="host", port=2222, username="u", password="p")],
+    )
+    manager = CommandManager(config)
+    window = app_module.MainWindow(config, manager)
+    stale = StaleShell()
+    window.sessions["dev"] = stale
+
+    shell = window._ensure_command_shell("dev")
+    window.close()
+
+    assert stale.closed is True
+    assert isinstance(shell, FreshShell)
+    assert shell.connected_to == ("host", 2222, "u", "p")
+    assert manager.server_statuses()[0]["status"] == "connected"
+
+
+def test_gui_health_check_marks_dead_session_disconnected(monkeypatch):
+    qt_app = QApplication.instance() or QApplication([])
+
+    def fake_start(self):
+        return None
+
+    class DeadShell:
+        closed = False
+
+        def probe(self, timeout=5):
+            return False
+
+        def close(self):
+            self.closed = True
+
+    monkeypatch.setattr(app_module.MainWindow, "_start_api_server", fake_start)
+
+    config = AppConfig(
+        api_token="secret-token",
+        servers=[ServerConfig(name="dev", host="host", username="u", password="p")],
+    )
+    manager = CommandManager(config)
+    window = app_module.MainWindow(config, manager)
+    shell = DeadShell()
+    window.sessions["dev"] = shell
+    manager.set_server_status("dev", "connected")
+
+    window._health_check_worker()
+    window.close()
+
+    assert shell.closed is True
+    assert "dev" not in window.sessions
+    assert manager.server_statuses()[0]["status"] == "disconnected"
 
 
 def test_uvicorn_config_does_not_require_console_stream(monkeypatch):

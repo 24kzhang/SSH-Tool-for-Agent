@@ -54,6 +54,7 @@ def main() -> int:
 
     command_id = command["id"]
     started = time.monotonic()
+    last_progress = 0.0
     while True:
         if time.monotonic() - started > args.wait:
             print(f"等待命令超时：{command_id}", file=sys.stderr)
@@ -79,6 +80,14 @@ def main() -> int:
             if status == "rejected":
                 return 3
             return 4
+        now = time.monotonic()
+        if now - last_progress >= 10:
+            elapsed = int(now - started)
+            message = command.get("message") or f"命令仍在执行，已等待 {elapsed} 秒"
+            updated = command.get("updated_text") or ""
+            suffix = f"，最近更新：{updated}" if updated else ""
+            print(f"[remote-tool] {status}: {message}{suffix}", file=sys.stderr, flush=True)
+            last_progress = now
         time.sleep(0.3)
 
 

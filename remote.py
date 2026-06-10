@@ -14,6 +14,8 @@ class RemoteExecutionError(RuntimeError):
 
 
 class RemoteShell:
+    HEARTBEAT_INTERVAL = 5
+
     def __init__(self):
         self.client: paramiko.SSHClient | None = None
         self.channel: paramiko.Channel | None = None
@@ -39,6 +41,9 @@ class RemoteShell:
             look_for_keys=False,
             allow_agent=False,
         )
+        transport = client.get_transport()
+        if transport:
+            transport.set_keepalive(30)
         channel = client.invoke_shell(width=160, height=48)
         channel.settimeout(0.2)
         self.client = client
@@ -54,7 +59,30 @@ class RemoteShell:
         self.channel = None
         self.client = None
 
-    def execute(self, cmd: str, timeout: int = 120) -> tuple[str, str, int, int]:
+    def probe(self, timeout: int = 5) -> bool:
+        if not self.connected or not self.channel:
+            return False
+        marker = f"__REMOTE_TOOL_PROBE_{uuid.uuid4().hex}"
+        started = time.monotonic()
+        output = ""
+        if not self._lock.acquire(timeout=0.1):
+            return True
+        try:
+            self.channel.send(f"printf '\\n{marker}\\n'\n")
+            while time.monotonic() - started <= timeout:
+                if self.channel.recv_ready():
+                    output += self.channel.recv(65535).decode("utf-8", errors="replace")
+                    if marker in output:
+                        return True
+                else:
+                    time.sleep(0.05)
+        except (OSError, EOFError, socket.timeout):
+            return False
+        finally:
+            self._lock.release()
+        return False
+
+    def execute(self, cmd: str, timeout: int = 120, on_heartbeat=None) -> tuple[str, str, int, int]:
         if not self.connected or not self.channel:
             raise RemoteExecutionError("SSH 未连接")
 
@@ -62,13 +90,21 @@ class RemoteShell:
         wrapped = f"{cmd}\n_ec=$?; printf '\\n{marker}:%s\\n' \"$_ec\"\n"
         pattern = re.compile(rf"{re.escape(marker)}:(\d+)")
         started = time.monotonic()
+        last_heartbeat = started
         output = ""
 
         with self._lock:
-            self.channel.send(wrapped)
+            try:
+                self.channel.send(wrapped)
+            except (OSError, EOFError) as exc:
+                raise RemoteExecutionError(f"SSH 连接已断开：{exc}") from exc
             while True:
-                if time.monotonic() - started > timeout:
+                now = time.monotonic()
+                if now - started > timeout:
                     raise TimeoutError(f"命令执行超过 {timeout} 秒")
+                if on_heartbeat and now - last_heartbeat >= self.HEARTBEAT_INTERVAL:
+                    on_heartbeat(int((now - started) * 1000), self._clean_output(output, cmd, marker))
+                    last_heartbeat = now
                 try:
                     if self.channel.recv_ready():
                         chunk = self.channel.recv(65535).decode("utf-8", errors="replace")
@@ -83,6 +119,8 @@ class RemoteShell:
                         time.sleep(0.05)
                 except socket.timeout:
                     time.sleep(0.05)
+                except (OSError, EOFError) as exc:
+                    raise RemoteExecutionError(f"SSH 连接已断开：{exc}") from exc
 
     def _drain(self) -> None:
         if not self.channel:

@@ -27,7 +27,7 @@ class AppConfig:
     api_host: str = "127.0.0.1"
     api_port: int = 8765
     api_token: str = ""
-    command_timeout: int = 120
+    command_timeout: int = 1800
     servers: list[ServerConfig] = field(default_factory=list)
 
 
